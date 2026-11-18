@@ -223,7 +223,7 @@ export default function CheckoutPage() {
           key: orderData.keyId,
           amount: orderData.order.amount,
           currency: 'INR',
-          name: 'Sri Vilvah Clothings',
+          name: 'Subham stores',
           order_id: orderData.order.id,
           prefill: { name: form.name, contact: form.phone, email: form.email },
           theme: { color: NAVY_DARK },

@@ -46,7 +46,7 @@ async function getAllProducts(sort) {
 }
 
 export const metadata = {
-  title: 'All Products | Sri Vilvah Clothings',
+  title: 'All Products | Subham stores',
 };
 
 export default async function ProductsPage({ searchParams }) {

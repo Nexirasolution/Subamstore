@@ -25,12 +25,12 @@ async function getCategories() {
 }
 
 export default async function Footer() {
-  const whatsapp = process.env.NEXT_PUBLIC_WHATSAPP || '919976449441';
-  const phoneDisplay = '+91 99764 49441';
-  const email = 'vilvahclothing@gmail.com';
+  const whatsapp = process.env.NEXT_PUBLIC_WHATSAPP || '918667658273';
+  const phoneDisplay = '+91 86676 58273';
+  const email = 'subhamstores2026@gmail.com';
   const instagram =
     process.env.NEXT_PUBLIC_INSTAGRAM ||
-    'https://www.instagram.com/vilvahclothings';
+    'https://www.instagram.com/subham_kids_stores';
   const categories = await getCategories();
 
   const quickLinks = [
@@ -50,19 +50,16 @@ export default async function Footer() {
 
         {/* Brand column */}
         <div className="sm:col-span-4">
-          <h3 className={`${display.className} text-2xl leading-tight`} style={{ color: INK, fontWeight: 400 }}>
-            Sri Vilvah
+          <h3 className={`${display.className} text-2xl leading-tight mb-4`} style={{ color: INK, fontWeight: 400 }}>
+            Subham Stores
           </h3>
-          <p className="text-[11px] font-medium tracking-wide mb-4" style={{ color: NAVY }}>
-            by Chitra S
-          </p>
 
           <p className="flex items-start gap-1.5 text-xs leading-relaxed" style={{ color: INK_SOFT }}>
             <MapPin size={13} className="shrink-0 mt-0.5" style={{ color: GOLD }} />
             <span>
-              92, SRP Mills, Sathy Road,<br />
-              Saravanampatti,<br />
-              Coimbatore, Tamil Nadu 641035
+              68, Vinayagar Kovil Street,<br />
+              Thalavaipettai,<br />
+              Bhavani, Erode (Dt) - 638312
             </span>
           </p>
 
@@ -87,7 +84,7 @@ export default async function Footer() {
       <div style={{ background: NAVY_DARK, borderTop: `1px solid ${GOLD}` }}>
         <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="text-[11px]" style={{ color: GOLD_PALE }}>
-            © {new Date().getFullYear()} Sri Vilvah. All rights reserved.
+            © {new Date().getFullYear()} Subham Stores. All rights reserved.
           </p>
 
           <a

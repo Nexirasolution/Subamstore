@@ -39,7 +39,7 @@ function brandToast(message, opts = {}) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span>{message}</span>
         <span style={{ fontSize: 9, color: NAVY, opacity: 0.6, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
-         Sri Vilvah Clothings
+         Subham Stores
         </span>
       </div>
     ),

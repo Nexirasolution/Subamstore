@@ -79,7 +79,7 @@ export default function AdminShell({ admin, children }) {
         >
           <div className="flex flex-col leading-tight">
             <span className="font-medium text-base" style={{ color: GOLD_PALE }}>
-              Sri Vilvah Clothings
+              Subham Stores
             </span>
             <span
               className="text-[10px] tracking-widest uppercase mt-0.5"
