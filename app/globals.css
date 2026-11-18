@@ -6,12 +6,13 @@
   --font-display: 'Poppins', sans-serif;
   --font-body: 'Poppins', sans-serif;
 
-  /* Brand Colors — white + peach minimalist */
-  --brand-peach: #D9946A;
-  --brand-peach-dark: #C17F55;
-  --brand-peach-light: #FBE8D9;
-  --brand-border: #EEE3DA;
-  --brand-ink: #241B21;
+  /* Brand Colors — white + royal blue minimalist.
+     Variable names kept as --brand-peach* so existing references still resolve. */
+  --brand-peach: #2A4DBF;
+  --brand-peach-dark: #1E3A9E;
+  --brand-peach-light: #E6ECFB;
+  --brand-border: #DCE3F3;
+  --brand-ink: #14193A;
 }
 
 html {
@@ -27,7 +28,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Scrollbar — peach thumb on white track */
+/* Scrollbar — royal blue thumb on white track */
 ::-webkit-scrollbar {
   height: 6px;
   width: 6px;
@@ -36,7 +37,7 @@ body {
   background: #fafafa;
 }
 ::-webkit-scrollbar-thumb {
-  background: #D9946A99;
+  background: #02114699;
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -46,7 +47,7 @@ body {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Primary button — solid peach, flat minimalist radius */
+/* Primary button — solid royal blue, flat minimalist radius */
 .btn-primary {
   background: var(--brand-peach);
   color: #fff;
@@ -85,7 +86,7 @@ body {
 }
 
 /* Outline button — ink border, flips to solid ink on hover so it reads
-   as a clear secondary action without competing with the peach accent */
+   as a clear secondary action without competing with the blue accent */
 .btn-outline {
   border: 1px solid var(--brand-ink);
   color: var(--brand-ink);
@@ -102,7 +103,7 @@ body {
   color: #fff;
 }
 
-/* Soft secondary button (peach-wash fill) */
+/* Soft secondary button (light-blue wash fill) */
 .btn-gold {
   background: var(--brand-peach-light);
   color: var(--brand-peach-dark);

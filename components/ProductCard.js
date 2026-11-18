@@ -11,7 +11,7 @@ import { useWishlist } from '@/components/WhishlistContext'; // adjust path as n
 import { useCart } from '@/components/CartContext';
 
 // Palette: 60% white/cream · 25% navy · 10% gold · 5% pale gold
-// Keep in sync with Navbar, Footer and CouponMarquee.
+// Keep in sync with Navbar, Footer, BannerCarousel, CategorySection and CouponMarquee.
 const WHITE = '#FFFFFF';
 const CREAM = '#F8F6EF';
 const NAVY = '#102A56';
@@ -53,7 +53,7 @@ const IMG_SIZES = '(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw';
 // 44px tall on mobile for easy tapping, 40px on desktop.
 // ---------------------------------------------------------------------------
 const BTN_BASE =
-  'inline-flex items-center justify-center gap-1.5 h-11 md:h-10 rounded-md text-[12px] sm:text-[13px] font-medium tracking-wide whitespace-nowrap transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center gap-1.5 h-11 md:h-10 rounded-sm text-[12px] sm:text-[13px] font-medium tracking-wide whitespace-nowrap transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#071A3A]';
 
 // Secondary: white with navy text and a gold border
 const BTN_CART = `${BTN_BASE} w-11 shrink-0 md:w-auto md:flex-1 md:px-3 bg-white text-[#071A3A] border border-[#C9A227] hover:bg-[#F8F6EF]`;
@@ -63,6 +63,14 @@ const BTN_CART_ADDED = `${BTN_BASE} w-11 shrink-0 md:w-auto md:flex-1 md:px-3 bg
 const BTN_BUY = `${BTN_BASE} flex-1 px-3 bg-[#071A3A] text-[#E6D39A] border border-[#C9A227] hover:bg-[#C9A227] hover:text-[#071A3A]`;
 const BTN_FULL = `${BTN_BASE} w-full px-3 bg-[#071A3A] text-[#E6D39A] border border-[#C9A227] hover:bg-[#C9A227] hover:text-[#071A3A]`;
 
+/*
+  Layout: "framed print"
+  - The photo sits in a thin gold frame with a pale-gold offset behind it,
+    the same device used on the banner and the category arches.
+  - The status tag (out of stock / few left / % off) is a square label fixed to
+    the bottom-left corner of the photo, not a floating pill.
+  - Title and price are left-aligned under the frame; size chips are square.
+*/
 export default function ProductCard({ product }) {
   const router = useRouter();
   const { addItem } = useCart();
@@ -143,12 +151,33 @@ export default function ProductCard({ product }) {
     router.push('/checkout');
   }
 
+  // One status tag, in priority order: out of stock > few left > discount.
+  const tag = outOfStock
+    ? { text: 'Out of stock', color: PAPER, bg: INK_SOFT }
+    : lowStock
+    ? { text: `Only ${totalStock} left`, color: GOLD_PALE, bg: NAVY }
+    : discountPct > 0
+    ? { text: `${discountPct}% off`, color: NAVY_DARK, bg: GOLD }
+    : null;
+
   return (
     <div style={{ background: PAPER, fontFamily: FONT_SANS }}>
-      {/* Image */}
+      {/* Image in a gold frame with a pale-gold offset */}
       <div className="relative">
-        <Link href={href} className="block" aria-label={product.name}>
-          <div className="relative aspect-[3/4] overflow-hidden" style={{ background: CREAM }}>
+        <Link
+          href={href}
+          className="block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4"
+          style={{ outlineColor: NAVY_DARK }}
+          aria-label={product.name}
+        >
+          <div
+            className="relative aspect-[3/4] overflow-hidden"
+            style={{
+              background: CREAM,
+              border: `1px solid ${GOLD}`,
+              boxShadow: `6px 6px 0 ${GOLD_PALE}`,
+            }}
+          >
             {/* Plain <img>: lazy-loaded, sized by the CDN, zero server CPU
                 (next/image would resize every picture on your own server). */}
             <img
@@ -162,34 +191,18 @@ export default function ProductCard({ product }) {
               decoding="async"
               className={`absolute inset-0 w-full h-full object-cover ${outOfStock ? 'grayscale opacity-70' : ''}`}
             />
+
+            {/* Status tag, fixed to the bottom-left corner of the photo */}
+            {tag && (
+              <span
+                className="absolute left-0 bottom-0 pointer-events-none text-[11px] sm:text-xs font-bold px-2.5 py-1"
+                style={{ color: tag.color, background: tag.bg }}
+              >
+                {tag.text}
+              </span>
+            )}
           </div>
         </Link>
-
-        {/* Status badge */}
-        <div className="absolute top-3 left-3 pointer-events-none">
-          {outOfStock ? (
-            <span
-              className="text-[11px] font-semibold uppercase tracking-wider"
-              style={{ color: PAPER, background: INK_SOFT, padding: '5px 12px', borderRadius: '999px' }}
-            >
-              Out of stock
-            </span>
-          ) : lowStock ? (
-            <span
-              className="text-[11px] font-semibold uppercase tracking-wider"
-              style={{ color: GOLD_PALE, background: NAVY, padding: '5px 12px', borderRadius: '999px' }}
-            >
-              {totalStock} left
-            </span>
-          ) : discountPct > 0 ? (
-            <span
-              className="text-[11px] font-semibold uppercase tracking-wider"
-              style={{ color: NAVY_DARK, background: GOLD, padding: '5px 12px', borderRadius: '999px' }}
-            >
-              Sale
-            </span>
-          ) : null}
-        </div>
 
         {/* Wishlist */}
         <button
@@ -197,16 +210,15 @@ export default function ProductCard({ product }) {
           onClick={handleWishlistClick}
           aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
           aria-pressed={wishlisted}
-          className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 rounded-full transition-transform active:scale-90"
+          className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 rounded-full transition-transform active:scale-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#071A3A]"
           style={{
-            background: 'rgba(255,255,255,0.92)',
-            border: `1px solid ${GOLD_PALE}`,
-            backdropFilter: 'blur(2px)',
+            background: 'rgba(255,255,255,0.95)',
+            border: `1px solid ${GOLD}`,
           }}
         >
           <Heart
             className="w-4 h-4"
-            strokeWidth={2}
+            strokeWidth={1.75}
             style={{ color: wishlisted ? GOLD : INK }}
             fill={wishlisted ? GOLD : 'none'}
           />
@@ -214,9 +226,9 @@ export default function ProductCard({ product }) {
       </div>
 
       {/* Title + price */}
-      <Link href={href} className="block pt-3">
+      <Link href={href} className="block pt-5">
         <h3
-          className="text-[13px] sm:text-sm font-medium line-clamp-2"
+          className="text-[13px] sm:text-sm font-bold line-clamp-2"
           style={{ color: INK, lineHeight: 1.375, minHeight: '2.75em' }}
         >
           {product.name}
@@ -229,14 +241,6 @@ export default function ProductCard({ product }) {
           {compareAt > price && (
             <span className="text-xs sm:text-sm line-through font-light" style={{ color: INK_SOFT }}>
               {formatINR(compareAt)}
-            </span>
-          )}
-          {discountPct > 0 && (
-            <span
-              className="text-xs font-medium"
-              style={{ color: INK, borderBottom: `1px solid ${GOLD}` }}
-            >
-              Save {discountPct}%
             </span>
           )}
         </div>
@@ -255,10 +259,10 @@ export default function ProductCard({ product }) {
                 disabled={soldOut}
                 onClick={() => setSelectedSize(s.size)}
                 aria-pressed={active}
-                className="min-w-[30px] h-7 px-2 text-[11px] font-medium transition-colors"
+                className="min-w-[30px] h-7 px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#071A3A]"
                 style={{
-                  borderRadius: '4px',
-                  border: `1px solid ${active ? NAVY : soldOut ? LINE : GOLD_PALE}`,
+                  borderRadius: '2px',
+                  border: `1px solid ${active ? NAVY : soldOut ? LINE : GOLD}`,
                   background: active ? NAVY : PAPER,
                   color: soldOut ? DISABLED : active ? PAPER : INK,
                   textDecoration: soldOut ? 'line-through' : 'none',

@@ -1,6 +1,6 @@
 /**
  * Run with: npm run seed
- * Creates the first admin account, default categories (from your category list),
+ * Creates the first admin account, default categories (kids dress),
  * and default store settings. Safe to re-run - it skips items that already exist.
  */
 require('dotenv').config({ path: '.env' });
@@ -25,7 +25,7 @@ async function main() {
   const Settings = mongoose.models.Settings || mongoose.model('Settings', SettingsSchema);
 
   // 1. Admin account
-  const email = (process.env.ADMIN_EMAIL || 'admin@vilvahclothing.com').toLowerCase();
+  const email = (process.env.ADMIN_EMAIL || 'subhamstores2026@gmail.com').toLowerCase();
   const existingAdmin = await Admin.findOne({ email });
   if (!existingAdmin) {
     const passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 10);
@@ -35,15 +35,16 @@ async function main() {
     console.log('Admin account already exists, skipping.');
   }
 
-  // 2. Categories (from your handwritten category list)
+  // 2. Categories (Kids dress)
   const categories = [
-    { name: 'Salwar Set', sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
-    { name: 'Rayon Umbrella Kurtis', sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
-    { name: 'Side Open Kurtis', sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
-    { name: 'Umbrella Kurtis', sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
-    { name: 'Nighties', sizes: ['M', 'L', 'XL', 'XXL', 'Free Size'] },
-    { name: 'Innerwear', sizes: ['S', 'M', 'L', 'XL'] },
-    { name: '2 Piece Set', sizes: ['S', 'M', 'L', 'XL', 'XXL'] }
+    { name: 'Boys Wear', sizes: ['0-1 Yr', '1-2 Yrs', '2-3 Yrs', '3-4 Yrs', '4-5 Yrs', '5-6 Yrs', '6-7 Yrs', '7-8 Yrs'] },
+    { name: 'Girls Frocks', sizes: ['0-1 Yr', '1-2 Yrs', '2-3 Yrs', '3-4 Yrs', '4-5 Yrs', '5-6 Yrs', '6-7 Yrs', '7-8 Yrs'] },
+    { name: 'Party Wear', sizes: ['1-2 Yrs', '2-3 Yrs', '3-4 Yrs', '4-5 Yrs', '5-6 Yrs', '6-7 Yrs', '7-8 Yrs'] },
+    { name: 'Ethnic Wear', sizes: ['1-2 Yrs', '2-3 Yrs', '3-4 Yrs', '4-5 Yrs', '5-6 Yrs', '6-7 Yrs', '7-8 Yrs'] },
+    { name: 'T-Shirts & Shorts', sizes: ['1-2 Yrs', '2-3 Yrs', '3-4 Yrs', '4-5 Yrs', '5-6 Yrs', '6-7 Yrs', '7-8 Yrs'] },
+    { name: 'Night Wear', sizes: ['1-2 Yrs', '2-3 Yrs', '3-4 Yrs', '4-5 Yrs', '5-6 Yrs', '6-7 Yrs', '7-8 Yrs'] },
+    { name: 'Baby Wear', sizes: ['0-3 Months', '3-6 Months', '6-9 Months', '9-12 Months'] },
+    { name: 'Innerwear', sizes: ['S', 'M', 'L', 'XL'] }
   ];
 
   for (let i = 0; i < categories.length; i++) {
@@ -61,19 +62,19 @@ async function main() {
   if (!existingSettings) {
     await Settings.create({
       key: 'global',
-      storeName: 'Sri Vilvah',
-      ownerName: 'Chitra S',
-      whatsapp: '919976449441',
-      phone: '919976449441',
-      altPhone: '918870904495',
-      email: 'vilvahclothing@gmail.com',
-      instagram: 'vilvahclothing',
-      address: '92, SRP Mills, Sathy Road, Saravanampatti, Coimbatore - 641035, Tamil Nadu',
-      gstin: '33AJUPC3279L1ZR',
+      storeName: 'Subham Stores',
+      ownerName: '',
+      whatsapp: '918667658273',
+      phone: '918667658273',
+      altPhone: '',
+      email: 'subhamstores2026@gmail.com',
+      instagram: '',
+      address: '68, Vinayagar Kovil Street, Thalavaipettai, Bhavani - 638312, Erode (Dt), Tamil Nadu',
+      gstin: '',
       shippingFee: 49,
       freeShippingAbove: 999,
-      seoTitle: "Sri Vilvah | Women's Kurtis, Nighties & Salwar Sets",
-      seoDescription: "Shop trendy women's kurtis, nighties and salwar sets from Sri Vilvah, Saravanampatti, Coimbatore."
+      seoTitle: 'Subham Stores | Kids Dress, Frocks & Baby Wear',
+      seoDescription: 'Shop adorable kids dresses, frocks, party wear and baby wear from Subham Stores, Thalavaipettai, Bhavani, Erode.'
     });
     console.log('Created default store settings.');
   }

@@ -12,40 +12,55 @@ const GOLD = '#C9A227';
 const GOLD_PALE = '#E6D39A';
 
 const SLIDE_MS = 4500;
+const GAP = 16; // px between slides
 
+/*
+  Layout: "peek stage"
+  - The active banner sits on the left at ~88% width with a pale-gold offset
+    frame behind it. The NEXT banner peeks in from the right edge, so the
+    visitor can see there is more and can click the sliver to jump to it.
+  - Under the stage is a progress rail: one segment per banner. The active
+    segment fills over SLIDE_MS, so it shows exactly when the slide changes.
+  - Banner title + "2 / 5" counter on the left of the rail, arrows on the right.
+*/
 export default function BannerCarousel({ banners }) {
   const count = banners?.length || 0;
   const [index, setIndex] = useState(0);
-  // Slides whose <img> has been mounted. Only the current slide and the next
-  // one are mounted up front, so banners 3+ are not downloaded until needed.
   const [seen, setSeen] = useState(() => new Set([0]));
+  const [autoplay, setAutoplay] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
-  // Mount the current slide and pre-load the next one.
+  // Autoplay only when there is more than one banner and motion is allowed.
+  useEffect(() => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    setAutoplay(count > 1 && !reduce);
+  }, [count]);
+
+  // Mount the current, next and previous slide images; the rest stay unloaded.
   useEffect(() => {
     if (count < 2) return;
     setSeen((prev) => {
       const next = (index + 1) % count;
-      if (prev.has(index) && prev.has(next)) return prev;
+      const before = (index - 1 + count) % count;
+      if (prev.has(index) && prev.has(next) && prev.has(before)) return prev;
       const s = new Set(prev);
       s.add(index);
       s.add(next);
+      s.add(before);
       return s;
     });
   }, [index, count]);
 
-  // Auto-advance. Depends on `index`, so a manual click restarts the timer.
-  // Paused while the tab is hidden and skipped entirely for users who prefer
-  // reduced motion — no wasted work in the background.
+  // Auto-advance. Restarts after any manual change and pauses in a hidden tab.
   useEffect(() => {
-    if (count < 2) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-
+    if (!autoplay) return;
     let t;
     const start = () => {
       clearTimeout(t);
       t = setTimeout(() => setIndex((i) => (i + 1) % count), SLIDE_MS);
     };
     const onVisibility = () => {
+      setHidden(document.hidden);
       if (document.hidden) clearTimeout(t);
       else start();
     };
@@ -56,102 +71,143 @@ export default function BannerCarousel({ banners }) {
       clearTimeout(t);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [index, count]);
+  }, [index, count, autoplay]);
 
   if (!count) return null;
 
+  const go = (i) => setIndex((i + count) % count);
+  const current = banners[index];
+
   return (
-    <section className="relative w-full overflow-hidden" style={{ background: CREAM }}>
-      {/*
-        One image for all screen sizes (recommended upload: 1920 x 810 px).
-        The box keeps the same aspect ratio on every device, so on mobile it
-        simply scales down and the WHOLE image stays visible.
-        - mobile:  object-contain -> never crops, even if the ratio is slightly off
-        - desktop: object-cover   -> fills the box edge to edge
-      */}
-      <div className="relative w-full aspect-[1920/810]">
-        {banners.map((b, i) => {
-          const isFirst = i === 0;
-          return (
-            <Link
-              key={b._id}
-              href={b.link || '#'}
-              className={`absolute inset-0 block transition-opacity duration-700 ${
-                i === index ? 'opacity-100' : 'opacity-0 pointer-events-none'
-              } ${!b.link ? 'pointer-events-none' : ''}`}
-              tabIndex={i === index ? 0 : -1}
-              aria-hidden={i !== index}
-            >
-              {(isFirst || seen.has(i)) && (
-                <img
-                  src={b.image}
-                  alt={b.title || 'Banner'}
-                  width={1920}
-                  height={810}
-                  // First banner is the page's largest paint: load it at once
-                  // with high priority. The rest load lazily, only when mounted.
-                  loading={isFirst ? 'eager' : 'lazy'}
-                  fetchPriority={isFirst ? 'high' : 'auto'}
-                  decoding={isFirst ? 'sync' : 'async'}
-                  className="absolute inset-0 w-full h-full object-contain object-center sm:object-cover"
-                />
-              )}
-            </Link>
-          );
-        })}
+    <section
+      className="relative w-full overflow-hidden px-3 pt-3 pb-3 sm:px-8 sm:pt-6 sm:pb-5"
+      style={{ background: CREAM }}
+      aria-roledescription="carousel"
+      aria-label="Featured offers"
+    >
+      <style>{`
+        @keyframes bc-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        .bc-fill { transform-origin: left; animation: bc-fill ${SLIDE_MS}ms linear forwards; }
+        .bc-fill[data-paused="true"] { animation-play-state: paused; }
+        @media (prefers-reduced-motion: reduce) {
+          .bc-fill { animation: none; transform: scaleX(1); }
+        }
+      `}</style>
 
+      <div className="mx-auto max-w-[1600px]">
+        {/* Stage: the track slides, the clipping happens on the section. */}
+        <div
+          className="flex transition-transform duration-700 ease-out motion-reduce:transition-none [--slide-w:92%] sm:[--slide-w:88%]"
+          style={{
+            gap: GAP,
+            transform: `translateX(calc(${-index} * (var(--slide-w) + ${GAP}px)))`,
+          }}
+        >
+          {banners.map((b, i) => {
+            const active = i === index;
+            return (
+              <Link
+                key={b._id}
+                href={b.link || '#'}
+                onClick={(e) => {
+                  // A click on a peeking slide brings it to the front instead of navigating.
+                  if (!active || !b.link) {
+                    e.preventDefault();
+                    if (!active) go(i);
+                  }
+                }}
+                className={`relative block flex-none w-[var(--slide-w)] aspect-[1920/810] transition-opacity duration-700 ${
+                  active ? 'opacity-100' : 'opacity-50 hover:opacity-80'
+                }`}
+                style={{
+                  boxShadow: active ? `8px 8px 0 ${GOLD_PALE}` : 'none',
+                  border: `1px solid ${active ? GOLD : 'transparent'}`,
+                  background: CREAM,
+                }}
+                tabIndex={active ? 0 : -1}
+                aria-hidden={!active}
+                aria-label={b.title || `Banner ${i + 1}`}
+              >
+                {(i === 0 || seen.has(i)) && (
+                  <img
+                    src={b.image}
+                    alt={b.title || 'Banner'}
+                    width={1920}
+                    height={810}
+                    // First banner is the largest paint: load it at once. Others are lazy.
+                    loading={i === 0 ? 'eager' : 'lazy'}
+                    fetchPriority={i === 0 ? 'high' : 'auto'}
+                    decoding={i === 0 ? 'sync' : 'async'}
+                    className="absolute inset-0 w-full h-full object-cover object-center"
+                  />
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Progress rail */}
         {count > 1 && (
-          <>
-            {/* Arrows — white with navy icon and a thin gold outline so they read on any banner image */}
-            <button
-              onClick={() => setIndex((i) => (i - 1 + count) % count)}
-              className="absolute left-2 sm:left-5 top-1/2 -translate-y-1/2 p-1 sm:p-2 rounded-full transition z-10 hover:bg-[#F8F6EF]"
-              style={{
-                background: 'rgba(255,255,255,0.95)',
-                color: NAVY_DARK,
-                border: `1px solid ${GOLD}`,
-                boxShadow: '0 2px 8px rgba(7, 26, 58, 0.15)',
-              }}
-              aria-label="Previous"
-            >
-              <ChevronLeft size={14} strokeWidth={1.5} />
-            </button>
-            <button
-              onClick={() => setIndex((i) => (i + 1) % count)}
-              className="absolute right-2 sm:right-5 top-1/2 -translate-y-1/2 p-1 sm:p-2 rounded-full transition z-10 hover:bg-[#F8F6EF]"
-              style={{
-                background: 'rgba(255,255,255,0.95)',
-                color: NAVY_DARK,
-                border: `1px solid ${GOLD}`,
-                boxShadow: '0 2px 8px rgba(7, 26, 58, 0.15)',
-              }}
-              aria-label="Next"
-            >
-              <ChevronRight size={14} strokeWidth={1.5} />
-            </button>
+          <div className="mt-4 sm:mt-6 flex items-center gap-3 sm:gap-6">
+            <div className="min-w-0 sm:w-[22%]" style={{ color: NAVY_DARK }}>
+              <p className="text-xs sm:text-sm font-medium tabular-nums">
+                {index + 1} / {count}
+              </p>
+              {current?.title && (
+                <p className="hidden sm:block truncate text-sm opacity-70">{current.title}</p>
+              )}
+            </div>
 
-            {/* Thin dash indicators */}
-            <div className="absolute bottom-2 sm:bottom-5 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-              {banners.map((_, i) => (
+            <div className="flex flex-1 gap-1.5 sm:gap-2" role="tablist" aria-label="Choose banner">
+              {banners.map((b, i) => (
                 <button
-                  key={i}
-                  onClick={() => setIndex(i)}
-                  className="rounded-full transition-all"
-                  style={{
-                    height: '3px',
-                    width: i === index ? '22px' : '10px',
-                    background: i === index ? GOLD : GOLD_PALE,
-                    // Navy halo keeps the dashes visible over light or dark banner images
-                    boxShadow:
-                      i === index
-                        ? '0 0 0 1px rgba(7, 26, 58, 0.45)'
-                        : '0 0 0 1px rgba(7, 26, 58, 0.25)',
-                  }}
-                  aria-label={`Go to slide ${i + 1}`}
-                />
+                  key={b._id}
+                  role="tab"
+                  aria-selected={i === index}
+                  aria-label={`Go to slide ${i + 1}${b.title ? `: ${b.title}` : ''}`}
+                  onClick={() => go(i)}
+                  className="group relative flex-1 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                  style={{ outlineColor: NAVY_DARK }}
+                >
+                  <span
+                    className="block h-[3px] w-full overflow-hidden"
+                    style={{ background: GOLD_PALE }}
+                  >
+                    {i < index && (
+                      <span className="block h-full w-full" style={{ background: GOLD }} />
+                    )}
+                    {i === index && (
+                      <span
+                        key={index}
+                        className={autoplay ? 'bc-fill block h-full w-full' : 'block h-full w-full'}
+                        data-paused={hidden}
+                        style={{ background: NAVY_DARK }}
+                      />
+                    )}
+                  </span>
+                </button>
               ))}
             </div>
-          </>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => go(index - 1)}
+                className="p-1.5 sm:p-2 rounded-full transition hover:bg-white"
+                style={{ color: NAVY_DARK, border: `1px solid ${GOLD}` }}
+                aria-label="Previous"
+              >
+                <ChevronLeft size={14} strokeWidth={1.5} />
+              </button>
+              <button
+                onClick={() => go(index + 1)}
+                className="p-1.5 sm:p-2 rounded-full transition hover:bg-white"
+                style={{ color: NAVY_DARK, border: `1px solid ${GOLD}` }}
+                aria-label="Next"
+              >
+                <ChevronRight size={14} strokeWidth={1.5} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </section>
