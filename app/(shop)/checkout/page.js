@@ -9,17 +9,15 @@ import { formatINR } from '@/lib/utils';
 import { INDIAN_STATES } from '@/lib/indianStates';
 
 // Palette: 60% white/cream · 25% navy · 10% gold · 5% pale gold
-// Keep in sync with the other storefront components.
 const WHITE = '#FFFFFF';
 const CREAM = '#F8F6EF';
 const NAVY = '#102A56';
 const NAVY_DARK = '#071A3A';
 const GOLD = '#C9A227';
-const GOLD_PALE = '#E6D39A';
 
 const INK = NAVY_DARK;
 const INK_SOFT = 'rgba(16, 42, 86, 0.65)';
-const LINE = 'rgba(230, 211, 154, 0.9)'; // pale-gold hairlines
+const LINE = 'rgba(230, 211, 154, 0.9)';
 const PAPER = WHITE;
 const SURFACE = CREAM;
 const FONT_SERIF = "'Playfair Display', Georgia, 'Times New Roman', serif";
@@ -30,6 +28,13 @@ const inputClass =
   'focus:border-[#C9A227] focus:ring-1 focus:ring-[#C9A227]';
 
 const sectionHeadClass = 'text-lg mb-4';
+
+// Cart items may store a selected add-on as { id } or { optionId } (or _id).
+// The server needs it as { id } to add the add-on price to the total.
+function addonPayload(sel) {
+  const id = sel?.id || sel?.optionId || sel?._id;
+  return id ? { id: String(id) } : null;
+}
 
 function SSRKInput({ placeholder, type = 'text', value, onChange, autoComplete, inputMode, maxLength }) {
   return (
@@ -66,9 +71,27 @@ export default function CheckoutPage() {
   const discountedSubtotal = subtotal - discount;
   const total = shipping !== null ? Math.round(discountedSubtotal + shipping) : null;
 
-  // Total piece count across the cart — sent as a fallback; the server
-  // normally computes weight from each product's own weight (grams).
   const totalQty = items.reduce((sum, i) => sum + (i.qty || 0), 0);
+
+  // Single place that builds the line items sent to the server, so the
+  // shipping estimate, Razorpay order and final order all use the same data
+  // (including pant/shawl add-ons, which change the price).
+  const buildOrderItems = useCallback(
+    () =>
+      items.map((i) => ({
+        productId: i.productId,
+        variantId: i.variantId,
+        size: i.size,
+        sleeveType: i.sleeveType || '',
+        zipType: i.zipType || '',
+        pantOption: addonPayload(i.pantOption),
+        shawlOption: addonPayload(i.shawlOption),
+        qty: i.qty,
+        isCombo: i.isCombo || false,
+        comboId: i.comboId
+      })),
+    [items]
+  );
 
   const fetchShipping = useCallback(async () => {
     setShippingLoading(true);
@@ -79,9 +102,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           subtotal: discountedSubtotal,
           totalQty,
-          // State selects the admin's state-wise shipping rate.
           state: form.state,
-          // The server looks up each product's weight from these lines.
           items: items.map((i) => ({
             productId: i.productId,
             qty: i.qty,
@@ -181,25 +202,10 @@ export default function CheckoutPage() {
       return;
     }
 
-    const orderItems = items.map((i) => ({
-      productId: i.productId,
-      variantId: i.variantId,
-      size: i.size,
-      sleeveType: i.sleeveType || '',
-      zipType: i.zipType || '',
-      qty: i.qty,
-      isCombo: i.isCombo || false,
-      comboId: i.comboId
-    }));
+    const orderItems = buildOrderItems();
 
     try {
       if (paymentMethod === 'razorpay') {
-        // Server recomputes the total from orderItems and stashes the order
-        // payload so the webhook can create the order even if this tab
-        // closes before the handler below runs.
-        // `expectedTotal` is only a safety check: if the server's total
-        // differs from what the customer saw, the server answers 409 and
-        // the Razorpay popup never opens with a wrong amount.
         const orderRes = await fetch('/api/payment/create-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -214,7 +220,7 @@ export default function CheckoutPage() {
         const orderData = await orderRes.json();
         if (!orderRes.ok) {
           toast.error(orderData.error || 'Payment gateway error');
-          if (orderRes.status === 409) fetchShipping(); // refresh what the page shows
+          if (orderRes.status === 409) fetchShipping();
           setSubmitting(false);
           return;
         }
@@ -228,9 +234,6 @@ export default function CheckoutPage() {
           prefill: { name: form.name, contact: form.phone, email: form.email },
           theme: { color: NAVY_DARK },
           handler: async function (response) {
-            // Fast path — if this fails or never runs, the webhook creates
-            // the same order server-side. /api/orders is idempotent on
-            // razorpayOrderId, so this is always safe to call.
             const finalRes = await fetch('/api/orders', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -250,8 +253,6 @@ export default function CheckoutPage() {
               clearCart();
               router.push(`/order-success/${finalData.order._id}`);
             } else {
-              // Payment already succeeded on Razorpay's side regardless —
-              // the webhook will still create the order in the background.
               toast.error(
                 `Payment received — confirming your order. If it doesn't appear shortly, contact support with payment ID ${response.razorpay_payment_id}.`,
                 { duration: 8000 }
@@ -289,8 +290,6 @@ export default function CheckoutPage() {
 
   const placeOrderDisabled = submitting || shippingLoading || checkingStock || shipping === null;
 
-  // Only show the "add ₹X more for free shipping" banner when a free-shipping
-  // threshold is actually configured (> 0) and the customer hasn't reached it.
   const amountToFreeShipping =
     freeShippingAbove !== null && freeShippingAbove > 0
       ? freeShippingAbove - discountedSubtotal
@@ -318,7 +317,7 @@ export default function CheckoutPage() {
 
       <div className="flex flex-col gap-10 md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:gap-12 md:items-start">
 
-        {/* ── Left: shipping form ───────────────────────────────── */}
+        {/* Left: shipping form */}
         <div>
           <h2 className={sectionHeadClass} style={{ fontFamily: FONT_SERIF, color: INK }}>Shipping details</h2>
           <div className="space-y-3">
@@ -367,7 +366,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* ── Right: summary card (sticky on desktop) ───────────── */}
+        {/* Right: summary card */}
         <aside
           className="p-5 sm:p-6 md:sticky md:top-6"
           style={{ background: SURFACE, border: `1px solid ${LINE}`, borderTop: `3px solid ${GOLD}`, borderRadius: '3px' }}
@@ -378,29 +377,12 @@ export default function CheckoutPage() {
             {items.map((i, idx) => (
               <div key={idx} className="flex justify-between text-sm py-1 gap-2" style={{ color: INK_SOFT }}>
                 <span className="truncate">
-                  {i.name} ({[i.color, i.size, i.sleeveType, i.zipType].filter(Boolean).join('/')}) ×{i.qty}
+                  {i.name} ({[i.color, i.size, i.sleeveType, i.zipType, i.pantOption?.name, i.shawlOption?.name].filter(Boolean).join('/')}) ×{i.qty}
                 </span>
                 <span className="shrink-0" style={{ color: INK }}>{formatINR(i.price * i.qty)}</span>
               </div>
             ))}
           </div>
-
-          {/* <div className="flex gap-2 mt-4">
-            <input
-              placeholder="Coupon code"
-              value={coupon}
-              onChange={(e) => setCoupon(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && applyCoupon()}
-              className={`${inputClass} flex-1`}
-            />
-            <button
-              onClick={applyCoupon}
-              className="px-4 text-sm shrink-0 transition-colors hover:bg-[#F8F6EF]"
-              style={{ border: `1px solid ${GOLD}`, color: NAVY, background: PAPER, borderRadius: '3px' }}
-            >
-              Apply
-            </button>
-          </div> */}
 
           <div style={{ height: '1px', background: LINE }} className="my-4" />
 
