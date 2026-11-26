@@ -1,20 +1,22 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 
 export const runtime = 'nodejs';
 
 // ── Limits ────────────────────────────────────────────────────────────────
-const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // phone photos can be 8–12 MB
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // videos are buffered in memory — keep modest
-const MAX_IMAGE_WIDTH = 1920;             // matches the recommended banner width
-const WEBP_QUALITY = 80;
-const MAX_INPUT_PIXELS = 80_000_000;      // guards against decompression bombs
+const MAX_IMAGE_BYTES = 100 * 1024 * 1024; // raw upload ceiling; everything under it is compressed
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;  // videos are buffered in memory, keep modest
+const MAX_IMAGE_WIDTH = 1920;
+const MAX_INPUT_PIXELS = 100_000_000;      // decompression-bomb guard
+const TARGET_BYTES = 400 * 1024;           // aim for output under ~400 KB
+const QUALITY_STEPS = [80, 72, 64, 56, 48];
+const WIDTH_STEPS = [1920, 1600, 1280, 1024];
 
-// These stay as uploaded (re-encoding would break animation / vector data).
-const PASSTHROUGH_IMAGES = new Set(['image/gif', 'image/svg+xml']);
+// SVG is vector, so leave it as is. GIF is handled below (kept animated).
+const PASSTHROUGH_IMAGES = new Set(['image/svg+xml']);
 
-// One long-lived client, created once per server process.
 const r2 = new S3Client({
   region: 'auto',
   endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -24,20 +26,37 @@ const r2 = new S3Client({
   },
 });
 
-// sharp is loaded once, lazily. If it isn't installed the route still works
-// and uploads the original file (run `npm i sharp` to enable compression).
-let sharpPromise;
-function getSharp() {
-  if (!sharpPromise) {
-    sharpPromise = import('sharp').then((m) => m.default || m).catch(() => null);
-  }
-  return sharpPromise;
-}
-
 function safeExt(name) {
   return name?.includes('.')
     ? name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5)
     : '';
+}
+
+// Resize + convert to WebP. If the result is still too big, lower quality,
+// then lower width, until it fits TARGET_BYTES (or we run out of steps).
+async function compressImage(input, animated) {
+  let best = null;
+
+  for (const width of WIDTH_STEPS.filter((w) => w <= MAX_IMAGE_WIDTH)) {
+    for (const quality of QUALITY_STEPS) {
+      const out = await sharp(input, {
+        failOn: 'none',
+        limitInputPixels: MAX_INPUT_PIXELS,
+        animated,
+        sequentialRead: true,
+      })
+        .rotate() // apply EXIF orientation, strips metadata (incl. GPS)
+        .resize({ width, withoutEnlargement: true })
+        .webp({ quality, effort: 4 })
+        .toBuffer();
+
+      if (!best || out.length < best.length) best = out;
+      if (out.length <= TARGET_BYTES) return out;
+    }
+    // Animated images are expensive to retry many times, so stop after one width.
+    if (animated) break;
+  }
+  return best; // smallest we could get
 }
 
 export async function POST(req) {
@@ -63,7 +82,6 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Only images and videos can be uploaded' }, { status: 415 });
   }
 
-  // Check the size BEFORE reading the file into memory.
   const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
   if (file.size > maxBytes) {
     return NextResponse.json(
@@ -72,39 +90,29 @@ export async function POST(req) {
     );
   }
 
-  // Keep the folder to safe path characters (no "..", no leading/trailing slashes)
-  const folder = String(rawFolder)
-    .replace(/[^a-zA-Z0-9/_-]/g, '')
-    .split('/')
-    .filter(Boolean)
-    .join('/') || 'uploads';
+  const folder =
+    String(rawFolder)
+      .replace(/[^a-zA-Z0-9/_-]/g, '')
+      .split('/')
+      .filter(Boolean)
+      .join('/') || 'uploads';
 
   let body = Buffer.from(await file.arrayBuffer());
   let contentType = type || 'application/octet-stream';
   let ext = safeExt(file.name);
 
-  // ── Compress images: resize to max width, fix phone rotation, convert to WebP.
-  // A 5 MB phone photo typically becomes ~150–300 KB, which is what makes the
-  // storefront fast. Done once at upload so the server never does it per visit.
+  // ── Always compress images (sharp is required, never silently skipped) ──
   if (isImage && !PASSTHROUGH_IMAGES.has(type)) {
-    const sharp = await getSharp();
-    if (sharp) {
-      try {
-        body = await sharp(body, { failOn: 'none', limitInputPixels: MAX_INPUT_PIXELS })
-          .rotate() // apply EXIF orientation, then strip metadata (incl. GPS)
-          .resize({ width: MAX_IMAGE_WIDTH, withoutEnlargement: true })
-          .webp({ quality: WEBP_QUALITY })
-          .toBuffer();
-        contentType = 'image/webp';
-        ext = 'webp';
-      } catch (err) {
-        console.error('Image processing failed:', err);
-        return NextResponse.json({ error: 'Invalid or unsupported image' }, { status: 400 });
-      }
+    try {
+      body = await compressImage(body, type === 'image/gif');
+      contentType = 'image/webp';
+      ext = 'webp';
+    } catch (err) {
+      console.error('Image processing failed:', err);
+      return NextResponse.json({ error: 'Invalid or unsupported image' }, { status: 400 });
     }
   }
 
-  // R2 serves objects by exact key, so keep the extension on everything.
   const key = `${folder}/${randomUUID()}${ext ? `.${ext}` : ''}`;
 
   try {
@@ -114,15 +122,13 @@ export async function POST(req) {
         Key: key,
         Body: body,
         ContentType: contentType,
-        // The key is a random UUID and is never overwritten, so browsers and
-        // Cloudflare's CDN can cache it for a year without re-checking.
         CacheControl: 'public, max-age=31536000, immutable',
       })
     );
 
     return NextResponse.json({
       url: `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`,
-      publicId: key, // same shape as before; this is the object key
+      publicId: key,
     });
   } catch (err) {
     console.error('R2 upload failed:', err);
