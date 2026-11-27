@@ -169,7 +169,7 @@ export default function AdminShell({ admin, children }) {
             <Menu size={22} />
           </button>
           <span className="font-medium text-base" style={{ color: INK }}>
-            Sri Vilvah Clothings Admin
+            Subham Stores Admin
           </span>
         </header>
 
