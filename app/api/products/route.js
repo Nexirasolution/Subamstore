@@ -7,8 +7,9 @@ import Category from '@/models/Category';
 import slugify from 'slugify';
 import { requireAdmin } from '@/lib/apiAuth';
 import { generateSku } from '@/lib/sku';
+import { productMatchesAge } from '@/lib/age';
 
-// GET /api/products?category=slug&size=M&minPrice=0&maxPrice=2000&sort=newest&page=1&limit=20&flag=bestseller
+// GET /api/products?category=slug&size=M&age=2-3 Y&minPrice=0&maxPrice=2000&sort=newest&page=1&limit=20&flag=bestseller
 // Pass limit=all to skip pagination entirely and return every matching product.
 export async function GET(req) {
   try {
@@ -35,6 +36,9 @@ export async function GET(req) {
 
     const size = searchParams.get('size');
     if (size) query['variants.sizes.size'] = size;
+
+    // Shop by age (matched after the query, see below).
+    const age = searchParams.get('age');
 
     const minPrice = searchParams.get('minPrice');
     const maxPrice = searchParams.get('maxPrice');
@@ -91,21 +95,34 @@ export async function GET(req) {
     const page = Number(searchParams.get('page') || 1);
     const limit = Number(limitParam || 24);
 
-    // Added `sizeChart` so any storefront view built off this list (e.g. a
-    // quick-view modal) can resolve the same product -> category size-chart
-    // fallback used on the full product detail page.
-    let productsQuery = Product.find(query)
-      .populate('category', 'name slug type sizeChart')
-      .sort(sortMap[sort] || sortMap.newest);
+    // `sizeChart` lets storefront views resolve the product -> category
+    // size-chart fallback. `sizes` lets "Shop by age" fall back to the
+    // category's ages for products that have no sizes of their own.
+    const baseQuery = () =>
+      Product.find(query)
+        .populate('category', 'name slug type sizeChart sizes')
+        .sort(sortMap[sort] || sortMap.newest);
 
-    if (!fetchAll) {
-      productsQuery = productsQuery.skip((page - 1) * limit).limit(limit);
+    let products;
+    let total;
+
+    if (age) {
+      // Age labels are matched in JS (spaces/case/"Years" vs "Y" are
+      // normalised), so fetch the scope, filter, then paginate in memory.
+      const all = await baseQuery();
+      const matched = all.filter((p) => productMatchesAge(p.toObject(), age));
+      total = matched.length;
+      products = fetchAll ? matched : matched.slice((page - 1) * limit, page * limit);
+    } else {
+      let productsQuery = baseQuery();
+      if (!fetchAll) {
+        productsQuery = productsQuery.skip((page - 1) * limit).limit(limit);
+      }
+      [products, total] = await Promise.all([
+        productsQuery,
+        Product.countDocuments(query)
+      ]);
     }
-
-    const [products, total] = await Promise.all([
-      productsQuery,
-      Product.countDocuments(query)
-    ]);
 
     return NextResponse.json({
       products,

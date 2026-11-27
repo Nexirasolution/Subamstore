@@ -6,6 +6,7 @@ import Settings from '@/models/Settings';
 import { requireAdmin } from '@/lib/apiAuth';
 import { calculateShipping } from '@/lib/shipping';
 import { getCartWeightGrams } from '@/lib/cartWeight';
+import { loadShippingLines } from '@/lib/productShipping';
 import { INDIAN_STATES } from '@/lib/indianStates';
 
 // Keep only valid, de-duplicated state rules with non-negative numbers, so a
@@ -49,9 +50,9 @@ export const PUT = requireAdmin(async (req) => {
 //   subtotal — cart subtotal in ₹ (after discount), used only to check the
 //              free-shipping threshold.
 //   items    — cart lines; the server looks up each product's own weight
-//              (grams) to compute the order's total weight.
-//   state    — customer's state; selects the admin's state-wise rate
-//              (global rates are used if no rule exists for it).
+//              (grams) and per-product shipping rules.
+//   state    — customer's state; selects the admin's state-wise rate and
+//              any per-product state rule.
 //   totalQty — fallback only: if `items` is missing, weight is estimated as
 //              totalQty × Settings.weightPerPiece.
 //
@@ -71,9 +72,10 @@ export async function POST(req) {
     const totalWeightGrams = Array.isArray(items)
       ? await getCartWeightGrams(items, Number(settings.weightPerPiece) || 0)
       : undefined;
+    const lines = Array.isArray(items) ? await loadShippingLines(items) : undefined;
 
     return NextResponse.json(
-      calculateShipping(settings, { subtotal, totalQty, totalWeightGrams, state })
+      calculateShipping(settings, { subtotal, totalQty, totalWeightGrams, state, lines })
     );
   } catch (err) {
     console.error('Shipping calculate error:', err);

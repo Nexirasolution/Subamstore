@@ -22,16 +22,13 @@ export default function BulkAddProductsPage() {
   // Applies to every product created in this batch
   const [isReadyToShip, setIsReadyToShip] = useState(false);
 
-  // Optional garment attributes — product-level, multi-select. Applied to
-  // every product in this batch. Leave both unchecked for categories where
-  // these don't apply (sarees, dupattas, etc). Customers will pick one of
-  // each on the storefront PDP if any are checked here.
+  // Per-product shipping override, applied to every product in this batch.
+  const [shippingMode, setShippingMode] = useState('default');
+  const [shippingFee, setShippingFee] = useState('');
+
   const [sleeveOptions, setSleeveOptions] = useState([]);
   const [zipOptions, setZipOptions] = useState([]);
 
-  // Optional — one or more shared size chart images applied to every
-  // product in this batch. Leave empty to fall back to the category's
-  // size chart instead.
   const [sizeChart, setSizeChart] = useState([]);
   const [sizeChartUploading, setSizeChartUploading] = useState(false);
 
@@ -53,7 +50,6 @@ export default function BulkAddProductsPage() {
   }, []);
 
   const selectedCategory = categories.find((c) => c._id === category);
-  // Preview of what the auto-generated title prefix will look like, purely cosmetic
   const titlePreview = (selectedCategory?.name || '')
     .trim()
     .toUpperCase()
@@ -111,8 +107,6 @@ export default function BulkAddProductsPage() {
     return data.url;
   }
 
-  // Size chart — supports multiple images. Selecting several files at once
-  // uploads each in turn and appends every resulting URL to the shared array.
   async function handleSizeChartFilesChange(e) {
     const selected = Array.from(e.target.files || []);
     if (selected.length === 0) return;
@@ -146,9 +140,9 @@ export default function BulkAddProductsPage() {
     if (!skuPrefix.trim()) return toast.error('Enter a SKU code (e.g. MT)');
     if (!price || Number(price) <= 0) return toast.error('Enter a valid price');
     if (!weight || Number(weight) <= 0) return toast.error('Enter a valid weight in grams');
+    if (shippingMode === 'fixed' && shippingFee === '') return toast.error('Enter the fixed shipping fee per piece');
     if (files.length === 0) return toast.error('Add at least one image');
 
-    // Combine predefined-size stock and manually-added sizes
     const fromPredefined = Object.entries(stockBySize)
       .filter(([, stock]) => stock !== '')
       .map(([size, stock]) => ({ size, stock: Number(stock) }));
@@ -166,14 +160,12 @@ export default function BulkAddProductsPage() {
 
     setSubmitting(true);
     try {
-      // 1. Upload every image first, one product will be created per URL
       const imageUrls = [];
       for (const file of files) {
         const url = await uploadImage(file);
         imageUrls.push(url);
       }
 
-      // 2. Create products in bulk
       const res = await fetch('/api/products/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -191,6 +183,7 @@ export default function BulkAddProductsPage() {
           sizeChart,
           sleeveOptions,
           zipOptions,
+          shipping: { mode: shippingMode, fee: shippingMode === 'fixed' ? Number(shippingFee) || 0 : 0 },
         }),
       });
 
@@ -221,9 +214,9 @@ export default function BulkAddProductsPage() {
     <div className="max-w-3xl">
       <h1 className="font-display text-2xl font-bold text-brand-magenta mb-1">Bulk Add Products</h1>
       <p className="text-sm text-brand-ink/50 mb-6">
-        One category, description, fabric, and weight applied to every product. Each image you upload becomes
-        its own product — titles are generated automatically from the category, and SKUs from the code below.
-        Pant/Shawl add-on options can be set afterward from each product's own edit page.
+        One category, description, fabric, weight and shipping rule applied to every product. Each image you upload
+        becomes its own product — titles are generated automatically from the category, and SKUs from the code below.
+        Pant/Shawl add-ons and state-wise shipping rules can be set afterward from each product's own edit page.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -311,6 +304,34 @@ export default function BulkAddProductsPage() {
           </div>
         </div>
 
+        {/* Shipping — applied to every product in this batch */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Shipping (applied to every product)</label>
+            <select
+              value={shippingMode}
+              onChange={(e) => setShippingMode(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+            >
+              <option value="default">Default (store rates)</option>
+              <option value="free">Free shipping</option>
+              <option value="fixed">Fixed fee per piece</option>
+            </select>
+          </div>
+          {shippingMode === 'fixed' && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Fee per piece (₹)</label>
+              <input
+                type="number"
+                min="0"
+                value={shippingFee}
+                onChange={(e) => setShippingFee(e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-brand-ink/10 outline-none"
+              />
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-sm font-medium mb-1">Description</label>
           <textarea
@@ -321,11 +342,6 @@ export default function BulkAddProductsPage() {
           />
         </div>
 
-        {/* Sleeve Type / Zip Type — product-level, multi-select. Applied to
-            every product in this batch. Leave both unchecked for categories
-            where these don't apply (sarees, dupattas, etc). If any are
-            checked, customers must choose one of each on the storefront
-            before adding the product to cart. */}
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-2">Sleeve Type Options (optional)</label>
@@ -399,7 +415,6 @@ export default function BulkAddProductsPage() {
           />
         </div>
 
-        {/* Ready to ship — applies to every product created in this batch */}
         <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
           <input
             type="checkbox"
@@ -410,7 +425,6 @@ export default function BulkAddProductsPage() {
           Mark all products in this batch as "Ready to Ship"
         </label>
 
-        {/* Predefined sizes from the category */}
         {categorySizes.length > 0 && (
           <div>
             <label className="block text-sm font-medium mb-2">Stock per size (applies to every product)</label>
@@ -432,7 +446,6 @@ export default function BulkAddProductsPage() {
           </div>
         )}
 
-        {/* Fallback: category has no sizes configured, let admin add sizes manually for this batch */}
         {category && categorySizes.length === 0 && (
           <div className="border border-brand-gold/40 bg-brand-gold/5 rounded-lg p-3">
             <p className="text-sm font-medium mb-1">No sizes configured for this category</p>

@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronRight, ShoppingBag } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import Filters from '@/components/Filters';
+import AgeFilter from '@/components/AgeFilter';
+import { collectAgeOptions } from '@/lib/age';
 
 // Palette: 60% white/cream · 25% navy · 10% gold · 5% pale gold
 //   navy dark #071A3A   navy #102A56   gold #C9A227
@@ -29,17 +31,20 @@ export default function CategoryPage() {
   const { slug } = useParams();
   const searchParams = useSearchParams();
   const urlFlag = searchParams.get('flag');
+  const urlAge = searchParams.get('age') || '';
 
   const [category, setCategory] = useState(null);
   const [subcategories, setSubcategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [sort, setSort] = useState(flagToSortValue(urlFlag));
   const [flag, setFlag] = useState(urlFlag);
+  const [age, setAge] = useState(urlAge);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setSort(flagToSortValue(urlFlag));
     setFlag(urlFlag);
+    setAge(urlAge);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, urlFlag]);
 
@@ -50,30 +55,47 @@ export default function CategoryPage() {
     else setFlag(null);
   }
 
+  // Category data doesn't depend on sort/flag/age, so it loads once per slug.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const catRes = await fetch(`/api/categories/${slug}`);
+      const catData = await catRes.json();
+      if (cancelled) return;
+      setCategory(catData.category);
+      setSubcategories(catData.subcategories || []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const catRes = await fetch(`/api/categories/${slug}`);
-    const catData = await catRes.json();
-    setCategory(catData.category);
-    setSubcategories(catData.subcategories || []);
-
     const params = new URLSearchParams({
       category: slug,
       sort: sortToApiSort(sort),
       limit: '1000',
     });
     if (flag) params.set('flag', flag);
+    if (age) params.set('age', age);
 
     const res = await fetch(`/api/products?${params.toString()}`);
     const data = await res.json();
     setProducts(data.products || []);
-
     setLoading(false);
-  }, [slug, sort, flag]);
+  }, [slug, sort, flag, age]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Age chips: ages typed into this category's (and its subcategories')
+  // "sizes" field in admin.
+  const ageOptions = useMemo(
+    () => collectAgeOptions(category?.sizes, ...subcategories.map((s) => s.sizes)),
+    [category, subcategories]
+  );
 
   const heading =
     flag === 'bestseller' ? `Best Sellers${category?.name ? ` in ${category.name}` : ''}` :
@@ -161,6 +183,9 @@ export default function CategoryPage() {
           </section>
         )}
 
+        {/* ── Shop by age ───────────────────────────────────────── */}
+        <AgeFilter ages={ageOptions} value={age} onChange={setAge} />
+
         {/* ── Toolbar: sort/filter ──────────────────────────────── */}
         <div className="mt-6 py-3 border-y border-[#E6D39A]">
           <Filters sort={sort} onSortChange={handleSortChange} />
@@ -182,17 +207,29 @@ export default function CategoryPage() {
             <div className="text-center py-16 sm:py-24 max-w-sm mx-auto">
               <ShoppingBag size={30} strokeWidth={1.5} className="mx-auto mb-4 text-[#C9A227]" />
               <p className="text-lg" style={{ fontFamily: FONT_SERIF }}>
-                No products in this category yet
+                {age ? `No styles found for ${age}` : 'No products in this category yet'}
               </p>
               <p className="text-sm mt-1.5 text-[#102A56]/65">
-                New styles arrive every week. Browse the rest of the collection in the meantime.
+                {age
+                  ? 'Try another age group or view all ages.'
+                  : 'New styles arrive every week. Browse the rest of the collection in the meantime.'}
               </p>
-              <Link
-                href="/"
-                className="inline-block mt-6 px-6 py-3 text-sm font-medium bg-[#071A3A] text-[#E6D39A] border border-[#C9A227] rounded-[4px] transition-colors hover:bg-[#C9A227] hover:text-[#071A3A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C9A227]"
-              >
-                Continue Shopping
-              </Link>
+              {age ? (
+                <button
+                  type="button"
+                  onClick={() => setAge('')}
+                  className="inline-block mt-6 px-6 py-3 text-sm font-medium bg-[#071A3A] text-[#E6D39A] border border-[#C9A227] rounded-[4px] transition-colors hover:bg-[#C9A227] hover:text-[#071A3A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C9A227]"
+                >
+                  Show all ages
+                </button>
+              ) : (
+                <Link
+                  href="/"
+                  className="inline-block mt-6 px-6 py-3 text-sm font-medium bg-[#071A3A] text-[#E6D39A] border border-[#C9A227] rounded-[4px] transition-colors hover:bg-[#C9A227] hover:text-[#071A3A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C9A227]"
+                >
+                  Continue Shopping
+                </Link>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 sm:gap-x-6 sm:gap-y-10">

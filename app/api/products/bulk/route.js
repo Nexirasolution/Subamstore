@@ -12,26 +12,16 @@ import { requireAdmin } from '@/lib/apiAuth';
 //   price, compareAtPrice, sizes: [{ size, stock }],
 //   images: [url, url, ...], tags,
 //   isReadyToShip, sizeChart: [url, url, ...],
-//   sleeveOptions: [ 'Full Sleeve' | 'Half Sleeve' | 'Elbow Sleeve' | 'Sleeveless', ... ],
-//   zipOptions: [ 'With Zip' | 'Without Zip', ... ]
+//   sleeveOptions: [...], zipOptions: [...],
+//   shipping: { mode: 'default' | 'free' | 'fixed', fee }
 // }
 // Creates ONE product per image.
-// - Title = auto-derived from the CATEGORY name + zero-padded number,
-//   e.g. category "Silk Sarees" -> SILKSAREES001, SILKSAREES002...
-//   (continues from the highest existing number for that title-code in
-//   that category, so repeated bulk uploads don't collide)
-// - SKU = admin-typed short code + zero-padded number, e.g. "MT" -> MT001, MT002...
-//   (continues from the highest existing SKU with that code, globally,
-//   since SKU is a global-unique field)
-// - weight / isReadyToShip / sizeChart / sleeveOptions / zipOptions, if provided, are
-//   applied identically to every product created in this batch.
-//   weight is the per-piece shipping weight in grams and is required.
-//   sizeChart is optional — if omitted, the storefront falls back to the
-//   category's own size chart images. sleeveOptions/zipOptions are optional
-//   product-level attributes — if omitted, no sleeve/zip selector shows on
-//   the storefront for these products.
-//   Pant/Shawl add-on options aren't set here (they're per-product) — set
-//   them afterward on each product's own edit page.
+// - Title = auto-derived from the CATEGORY name + zero-padded number.
+// - SKU = admin-typed short code + zero-padded number.
+// - weight / isReadyToShip / sizeChart / sleeveOptions / zipOptions /
+//   shipping mode+fee are applied identically to every product in the batch.
+//   Per-state shipping rules and Pant/Shawl add-ons are set afterward on
+//   each product's own edit page.
 export const POST = requireAdmin(async (req) => {
   try {
     await dbConnect();
@@ -52,6 +42,7 @@ export const POST = requireAdmin(async (req) => {
       sizeChart = [],
       sleeveOptions = [],
       zipOptions = [],
+      shipping = {},
     } = body;
 
     if (!category) {
@@ -76,16 +67,10 @@ export const POST = requireAdmin(async (req) => {
       return NextResponse.json({ error: 'At least one size with stock is required' }, { status: 400 });
     }
 
-    // Accept either an array of image URLs (current format) or a single
-    // legacy string, so older clients can't accidentally wipe the field.
     const sizeChartImages = Array.isArray(sizeChart)
       ? sizeChart.filter(Boolean)
       : (sizeChart ? [sizeChart] : []);
 
-    // Validate sleeve/zip options against the schema's allowed enum values,
-    // so a bad value from a stale client can't silently fail product
-    // creation for the whole batch (Mongoose enum validation would reject
-    // the entire document otherwise).
     const ALLOWED_SLEEVE = ['Full Sleeve', 'Half Sleeve', 'Elbow Sleeve', 'Sleeveless'];
     const ALLOWED_ZIP = ['With Zip', 'Without Zip'];
     const sleeveOptionsClean = Array.isArray(sleeveOptions)
@@ -94,6 +79,15 @@ export const POST = requireAdmin(async (req) => {
     const zipOptionsClean = Array.isArray(zipOptions)
       ? zipOptions.filter((z) => ALLOWED_ZIP.includes(z))
       : [];
+
+    // Shipping override — validated so a bad value can't fail the whole batch.
+    const ALLOWED_SHIP = ['default', 'free', 'fixed'];
+    const shippingMode = ALLOWED_SHIP.includes(shipping?.mode) ? shipping.mode : 'default';
+    const shippingClean = {
+      mode: shippingMode,
+      fee: shippingMode === 'fixed' ? Math.max(0, Number(shipping?.fee) || 0) : 0,
+      stateRules: [],
+    };
 
     const cat = await Category.findById(category);
     if (!cat) return NextResponse.json({ error: 'Category not found' }, { status: 404 });
@@ -129,7 +123,7 @@ export const POST = requireAdmin(async (req) => {
       if (match) maxTitleNum = Math.max(maxTitleNum, parseInt(match[1], 10));
     }
 
-    // Continue SKU numbering from the highest existing SKUCODE### (global, SKU is unique across all products)
+    // Continue SKU numbering from the highest existing SKUCODE### (global)
     const existingSkus = await Product.find({
       sku: { $regex: `^${skuCode}\\d+$`, $options: 'i' },
     }).select('sku');
@@ -189,6 +183,7 @@ export const POST = requireAdmin(async (req) => {
           sizeChart: sizeChartImages,
           sleeveOptions: sleeveOptionsClean,
           zipOptions: zipOptionsClean,
+          shipping: shippingClean,
         });
 
         created.push({ id: product._id, name: product.name, sku: product.sku });

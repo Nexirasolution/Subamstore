@@ -53,30 +53,34 @@ const ProductSchema = new mongoose.Schema(
     // falls back to this product's category.sizeChart instead.
     sizeChart: [{ type: String }],
 
-    // One or more optional product videos (e.g. a try-on or fabric-drape
-    // clip). Shown on the storefront PDP below the image gallery. Uploaded
-    // through the same /api/upload endpoint as images — Cloudinary's
-    // resource_type: 'auto' detects and stores it as a video asset.
+    // One or more optional product videos.
     videos: [{ type: String }],
 
-    // Product-level (not per-variant) sleeve/zip options. Admin picks which
-    // of these apply to this product; if a product has any sleeveOptions,
-    // the customer must pick one on the PDP before adding to cart. Same
-    // for zipOptions. Products where these don't apply (sarees, dupattas,
-    // jewellery, etc) simply leave these empty and no selector is shown.
     sleeveOptions: [{ type: String, enum: ['Full Sleeve', 'Half Sleeve', 'Elbow Sleeve', 'Sleeveless'] }],
     zipOptions: [{ type: String, enum: ['With Zip', 'Without Zip'] }],
 
-    // Optional add-ons — admin can add any number of named pant/shawl
-    // options, each with its own image, extra price, and stock. Customer
-    // picks at most one of each (or none, i.e. "without pant"/"without
-    // shawl"). Empty array = no selector shown on the storefront.
     pantOptions: [AddonOptionSchema],
     shawlOptions: [AddonOptionSchema],
 
-    // When true, the storefront shows a highlighted "Ready to Ship" badge
-    // below the product title.
     isReadyToShip: { type: Boolean, default: false },
+
+    // Per-product shipping override.
+    //   mode: 'default' -> use global/state weight-based rates (Settings)
+    //         'free'    -> this product adds no shipping
+    //         'fixed'   -> `fee` ₹ per piece
+    // stateRules override the above for customers in that state.
+    shipping: {
+      mode: { type: String, enum: ['default', 'free', 'fixed'], default: 'default' },
+      fee: { type: Number, default: 0, min: 0 },
+      stateRules: [
+        {
+          _id: false,
+          state: { type: String, required: true },
+          mode: { type: String, enum: ['default', 'free', 'fixed'], default: 'fixed' },
+          fee: { type: Number, default: 0, min: 0 }
+        }
+      ]
+    },
 
     basePrice: { type: Number, required: true }, // used for listing/sorting
     rating: { type: Number, default: 0 },

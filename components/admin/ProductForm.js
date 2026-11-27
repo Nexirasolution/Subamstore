@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, Upload, Loader2, X } from 'lucide-react';
+import { INDIAN_STATES } from '@/lib/indianStates';
 
 // Design tokens — same white/peach minimalist system as the rest of the site.
 const INK = '#241B21';
@@ -33,6 +34,18 @@ function normalizeSizeChart(value) {
   if (Array.isArray(value)) return value;
   if (value) return [value]; // backward-compat with the old single-string field
   return [];
+}
+
+function normalizeShipping(value) {
+  return {
+    mode: value?.mode || 'default',
+    fee: value?.fee ?? '',
+    stateRules: (value?.stateRules || []).map((r) => ({
+      state: r.state || '',
+      mode: r.mode || 'fixed',
+      fee: r.fee ?? '',
+    })),
+  };
 }
 
 // Shared input style
@@ -148,8 +161,6 @@ function ImageSlot({ value, onChange, onRemove, showRemove }) {
 }
 
 // Reusable editor for a list of named add-on options (pants / shawls).
-// Each option gets its own image, extra price (added on top of the
-// variant price when a customer picks it), stock, and optional SKU.
 function AddonOptionsEditor({ title, options, onAdd, onUpdate, onRemove }) {
   return (
     <div style={cardStyle}>
@@ -237,8 +248,7 @@ function AddonOptionsEditor({ title, options, onAdd, onUpdate, onRemove }) {
   );
 }
 
-// Video upload slot — mirrors ImageSlot's upload pattern but renders a
-// playable <video> thumbnail instead of an <img>, and accepts video/* files.
+// Video upload slot — renders a playable <video> thumbnail.
 function VideoSlot({ value, uploading, onRemove }) {
   return (
     <div className="relative overflow-hidden" style={{ borderRadius: '4px', border: `1px solid ${LINE}` }}>
@@ -275,6 +285,7 @@ export default function ProductForm({ initial, productId }) {
       shawlOptions: [],
       isBestSeller: false, isTopSeller: false, isActiveSeller: true, isFeatured: false, isActive: true,
       isReadyToShip: false,
+      shipping: { mode: 'default', fee: '', stateRules: [] },
     };
     return {
       ...base,
@@ -287,6 +298,7 @@ export default function ProductForm({ initial, productId }) {
       zipOptions: base.zipOptions || [],
       pantOptions: (base.pantOptions || []).map((o) => ({ ...o })),
       shawlOptions: (base.shawlOptions || []).map((o) => ({ ...o })),
+      shipping: normalizeShipping(base.shipping),
     };
   });
   const [saving, setSaving] = useState(false);
@@ -386,8 +398,31 @@ export default function ProductForm({ initial, productId }) {
     setForm((f) => ({ ...f, [field]: (f[field] || []).filter((_, i) => i !== idx) }));
   }
 
-  // Size chart — supports multiple images. Selecting several files at once
-  // uploads each in turn and appends every resulting URL to the array.
+  // Per-product shipping handlers
+  function updateShipping(key, value) {
+    setForm((f) => ({ ...f, shipping: { ...f.shipping, [key]: value } }));
+  }
+  function addShippingRule() {
+    setForm((f) => ({
+      ...f,
+      shipping: { ...f.shipping, stateRules: [...f.shipping.stateRules, { state: '', mode: 'fixed', fee: '' }] },
+    }));
+  }
+  function updateShippingRule(idx, key, value) {
+    setForm((f) => {
+      const rules = [...f.shipping.stateRules];
+      rules[idx] = { ...rules[idx], [key]: value };
+      return { ...f, shipping: { ...f.shipping, stateRules: rules } };
+    });
+  }
+  function removeShippingRule(idx) {
+    setForm((f) => ({
+      ...f,
+      shipping: { ...f.shipping, stateRules: f.shipping.stateRules.filter((_, i) => i !== idx) },
+    }));
+  }
+
+  // Size chart — supports multiple images.
   async function handleSizeChartFilesChange(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -417,10 +452,7 @@ export default function ProductForm({ initial, productId }) {
     setForm((f) => ({ ...f, sizeChart: (f.sizeChart || []).filter((_, i) => i !== idx) }));
   }
 
-  // Videos — supports multiple files, uploaded one at a time through the
-  // same /api/upload endpoint used for images. Cloudinary's
-  // resource_type: 'auto' detects the file as video and returns a
-  // playable secure_url.
+  // Videos — supports multiple files.
   async function handleVideoFilesChange(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -458,9 +490,18 @@ export default function ProductForm({ initial, productId }) {
       return;
     }
 
+    if (form.shipping.mode === 'fixed' && !(Number(form.shipping.fee) >= 0 && form.shipping.fee !== '')) {
+      toast.error('Enter the fixed shipping fee per piece');
+      return;
+    }
+    const badRule = form.shipping.stateRules.find((r) => !r.state || (r.mode === 'fixed' && r.fee === ''));
+    if (badRule) {
+      toast.error('Each state shipping rule needs a state and, for fixed fee, an amount');
+      return;
+    }
+
     setSaving(true);
-    // Note: sku is intentionally omitted — it's auto-generated/managed server-side
-    // based on the product's category (see /api/products and /api/products/[id]).
+    // Note: sku is intentionally omitted — it's auto-generated/managed server-side.
     const payload = {
       ...form,
       weight: Number(form.weight) || 0,
@@ -486,6 +527,17 @@ export default function ProductForm({ initial, productId }) {
           stock: Number(o.stock) || 0,
           sku: o.sku || '',
         })),
+      shipping: {
+        mode: form.shipping.mode || 'default',
+        fee: form.shipping.mode === 'fixed' ? Number(form.shipping.fee) || 0 : 0,
+        stateRules: (form.shipping.stateRules || [])
+          .filter((r) => r.state)
+          .map((r) => ({
+            state: r.state,
+            mode: r.mode || 'fixed',
+            fee: r.mode === 'fixed' ? Number(r.fee) || 0 : 0,
+          })),
+      },
       variants: form.variants.map((v) => ({
         ...v,
         price: Number(v.price),
@@ -598,8 +650,7 @@ export default function ProductForm({ initial, productId }) {
             />
           </div>
 
-          {/* Size chart — one or more images. If left empty, the storefront
-              falls back to this product's category size chart. */}
+          {/* Size chart */}
           <div className="sm:col-span-2">
             <label style={labelStyle}>
               Size Chart <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>
@@ -634,9 +685,7 @@ export default function ProductForm({ initial, productId }) {
             <input ref={sizeChartFileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleSizeChartFilesChange} />
           </div>
 
-          {/* Product videos — optional, shown on the storefront PDP below
-              the image gallery. Accepts any video file; upload goes through
-              the same /api/upload endpoint as images. */}
+          {/* Product videos */}
           <div className="sm:col-span-2">
             <label style={labelStyle}>
               Product Videos <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>
@@ -661,10 +710,7 @@ export default function ProductForm({ initial, productId }) {
             <input ref={videoFileRef} type="file" accept="video/*" multiple className="hidden" onChange={handleVideoFilesChange} />
           </div>
 
-          {/* Sleeve/Zip options — product-level, not per-variant. Admin picks
-              which apply to this product; customers choose one of each on
-              the PDP before adding to cart. Leave both unchecked for products
-              where they don't apply (sarees, dupattas, jewellery, etc). */}
+          {/* Sleeve/Zip options */}
           <div className="sm:col-span-2 grid sm:grid-cols-2 gap-4">
             <div>
               <label style={labelStyle}>
@@ -763,7 +809,6 @@ export default function ProductForm({ initial, productId }) {
 
         {form.variants.map((v, vIdx) => (
           <div key={vIdx} style={cardStyle}>
-            {/* Variant header */}
             <div
               className="flex justify-between items-center mb-3 pb-2"
               style={{ borderBottom: `1px solid ${LINE}` }}
@@ -843,7 +888,7 @@ export default function ProductForm({ initial, productId }) {
             {v.sizes.map((s, sIdx) => (
               <div key={sIdx} className="flex gap-2 mb-2 items-center">
                 <input
-                  placeholder="Size (e.g. M, 38, Free Size)"
+                  placeholder="Size (e.g. M, 38, 2-3 Y)"
                   style={{ ...inputStyle, width: '140px', marginTop: 0 }}
                   value={s.size}
                   onChange={(e) => updateSize(vIdx, sIdx, 'size', e.target.value)}
@@ -887,7 +932,7 @@ export default function ProductForm({ initial, productId }) {
         ))}
       </div>
 
-      {/* Pant Options — optional, product-level, admin can add any number */}
+      {/* Pant Options */}
       <AddonOptionsEditor
         title="Pant Options"
         options={form.pantOptions}
@@ -896,7 +941,7 @@ export default function ProductForm({ initial, productId }) {
         onRemove={(idx) => removeAddonOption('pantOptions', idx)}
       />
 
-      {/* Shawl Options — optional, product-level, admin can add any number */}
+      {/* Shawl Options */}
       <AddonOptionsEditor
         title="Shawl Options"
         options={form.shawlOptions}
@@ -904,6 +949,91 @@ export default function ProductForm({ initial, productId }) {
         onUpdate={(idx, key, value) => updateAddonOption('shawlOptions', idx, key, value)}
         onRemove={(idx) => removeAddonOption('shawlOptions', idx)}
       />
+
+      {/* Shipping — per-product override */}
+      <div style={cardStyle}>
+        <p style={sectionHeadStyle}>Shipping</p>
+        <p style={{ fontSize: '12px', color: INK_SOFT, fontFamily: 'sans-serif', marginBottom: '12px' }}>
+          "Default" uses the store's weight-based rates. "Fixed fee" is charged per piece.
+          State rules below override this for customers in that state.
+        </p>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label style={labelStyle}>Shipping for this product</label>
+            <select
+              style={inputStyle}
+              value={form.shipping.mode}
+              onChange={(e) => updateShipping('mode', e.target.value)}
+            >
+              <option value="default">Default (store rates)</option>
+              <option value="free">Free shipping</option>
+              <option value="fixed">Fixed fee per piece</option>
+            </select>
+          </div>
+          {form.shipping.mode === 'fixed' && (
+            <div>
+              <label style={labelStyle}>Fee per piece (₹)</label>
+              <input
+                type="number"
+                min="0"
+                style={inputStyle}
+                value={form.shipping.fee}
+                onChange={(e) => updateShipping('fee', e.target.value)}
+                onFocus={(e) => (e.target.style.borderColor = PEACH)}
+                onBlur={(e) => (e.target.style.borderColor = LINE)}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between mt-5 mb-2">
+          <label style={labelStyle}>State-wise shipping (optional)</label>
+          <button
+            type="button"
+            onClick={addShippingRule}
+            className="flex items-center gap-1 text-sm font-medium px-3 py-1.5"
+            style={{ background: PAPER, color: PEACH, border: `1px solid ${PEACH}`, borderRadius: '4px', fontFamily: 'sans-serif', cursor: 'pointer' }}
+          >
+            <Plus size={14} /> Add state rule
+          </button>
+        </div>
+
+        {form.shipping.stateRules.map((r, idx) => (
+          <div key={idx} className="flex flex-wrap gap-2 mb-2 items-center">
+            <select
+              style={{ ...inputStyle, marginTop: 0, flex: '1 1 160px' }}
+              value={r.state}
+              onChange={(e) => updateShippingRule(idx, 'state', e.target.value)}
+            >
+              <option value="">Select state</option>
+              {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              style={{ ...inputStyle, marginTop: 0, width: '150px' }}
+              value={r.mode}
+              onChange={(e) => updateShippingRule(idx, 'mode', e.target.value)}
+            >
+              <option value="fixed">Fixed fee</option>
+              <option value="free">Free</option>
+              <option value="default">Store rates</option>
+            </select>
+            {r.mode === 'fixed' && (
+              <input
+                type="number"
+                min="0"
+                placeholder="₹ per piece"
+                style={{ ...inputStyle, marginTop: 0, width: '120px' }}
+                value={r.fee}
+                onChange={(e) => updateShippingRule(idx, 'fee', e.target.value)}
+              />
+            )}
+            <button type="button" onClick={() => removeShippingRule(idx)} style={{ color: INK_SOFT, cursor: 'pointer' }}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
 
       {/* Submit button */}
       <button
